@@ -4,10 +4,10 @@ import "firebase/compat/auth";
 import "firebase/compat/firestore";
 import db from "./firebase";
 import { useEffect, useRef, useState } from "react";
-import { MDCDialog } from "@material/dialog";
-import { useLocation } from "react-router-dom";
 import moment from "moment";
 import { doc, setDoc, getDoc } from "firebase/firestore";
+import { Button, Modal, Tooltip } from "antd";
+import Input from "antd/lib/input/Input";
 
 const configuration = {
   iceServers: [
@@ -20,16 +20,15 @@ const configuration = {
 let remoteStream = null;
 
 let peerConnection = null;
-let roomDialog = null;
+
 let roomId = null;
+
 function App() {
   const [disabledCreate, setDisabledCreate] = useState(true);
 
   const [disabledJoin, setDisabledJoin] = useState(true);
 
   const [disabledHang, setDisabledHang] = useState(true);
-
-  const [disabledCamera, setDisabledCamera] = useState(false);
 
   const [localStream, setLocalStream] = useState(null);
 
@@ -39,7 +38,9 @@ function App() {
 
   const [name, setName] = useState("");
 
-  const [nameTemp, setNameTemp] = useState("");
+  const [displayName, setDisplayName] = useState("");
+
+  const [displayNameRemote, setDisplayNameRemote] = useState("");
 
   const [message, setMessage] = useState("");
 
@@ -49,7 +50,13 @@ function App() {
 
   const [chatRoom, setChatRoom] = useState("");
 
-  const location = useLocation();
+  const [sending, setSending] = useState(false);
+
+  const [isOpenIncoming, setIsOpenIncoming] = useState(false);
+
+  const pickupRef = useRef();
+
+  // const [roomIdTemp, setRoomIdTemp] = useState("");
 
   const handleCopy = (text) => {
     const dummy = document.createElement("textarea");
@@ -61,9 +68,6 @@ function App() {
   };
 
   async function createRoom() {
-    setDisabledCreate(true);
-    setDisabledJoin(true);
-
     const roomRef = await db.collection("rooms").doc();
 
     console.log("Create PeerConnection with configuration: ", configuration);
@@ -91,23 +95,20 @@ function App() {
     // Code for creating a room below
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    console.log("Created offer:", offer);
 
     const roomWithOffer = {
       offer: {
         type: offer.type,
         sdp: offer.sdp,
+        name: name,
       },
     };
 
+    setDisplayName();
+
     await roomRef.set(roomWithOffer);
 
-    // roomId = roomRef.id;
-
-    console.log(`New room created with SDP offer. Room ID: ${roomRef.id}`);
-
     setRoomLink(roomRef.id);
-    // Code for creating a room above
 
     peerConnection.addEventListener("track", (event) => {
       console.log("Got remote track:", event.streams[0]);
@@ -121,7 +122,9 @@ function App() {
     roomRef.onSnapshot(async (snapshot) => {
       const data = snapshot.data();
       if (!peerConnection.currentRemoteDescription && data && data.answer) {
-        console.log("Got remote description: ", data.answer);
+        // setIsOpenIncoming(true);
+        setDisplayName(data.offer?.name);
+        setDisplayNameRemote(data.answer?.name);
         const rtcSessionDescription = new RTCSessionDescription(data.answer);
         await peerConnection.setRemoteDescription(rtcSessionDescription);
       }
@@ -140,39 +143,27 @@ function App() {
     });
 
     setChatRoom(roomRef.id);
-
-    // Listen for remote ICE candidates above
-  }
-
-  function joinRoom() {
-    roomDialog = new MDCDialog(document.getElementById("room-dialog"));
-
     setDisabledCreate(true);
     setDisabledJoin(true);
-
-    document.getElementById("confirmJoinBtn").addEventListener(
-      "click",
-      async () => {
-        roomId = document.getElementById("room-id").value;
-        console.log("Join room: ", roomId);
-        setRoomLink("Đang trong cuộc gọi ");
-        await joinRoomById(roomId);
-      },
-      { once: true }
-    );
-    roomDialog.open();
+    setDisabledHang(false);
   }
+
+  const joinRoom = (roomIdTemp) => {
+    setDisabledCreate(true);
+    setDisabledJoin(true);
+    setDisabledHang(false);
+
+    joinRoomById(roomIdTemp).then(() => setRoomLink("Đang trong cuộc gọi "));
+  };
 
   async function joinRoomById(roomId) {
     const db = firebase.firestore();
     const roomRef = db.collection("rooms").doc(`${roomId}`);
     const roomSnapshot = await roomRef.get();
-    // console.log("Got room:", roomSnapshot.exists);
 
     setChatRoom(roomId);
 
     if (roomSnapshot.exists) {
-      console.log("Create PeerConnection with configuration: ", configuration);
       peerConnection = new RTCPeerConnection(configuration);
       registerPeerConnectionListeners();
       localStream.getTracks().forEach((track) => {
@@ -186,15 +177,12 @@ function App() {
           console.log("Got final candidate!");
           return;
         }
-        console.log("Got candidate: ", event.candidate);
         calleeCandidatesCollection.add(event.candidate.toJSON());
       });
       // Code for collecting ICE candidates above
 
       peerConnection.addEventListener("track", (event) => {
-        console.log("Got remote track:", event.streams[0]);
         event.streams[0].getTracks().forEach((track) => {
-          console.log("Add a track to the remoteStream:", track);
           remoteStream?.addTrack(track);
           if (remoteVideo.current && "srcObject" in remoteVideo.current) {
             remoteVideo.current.srcObject = remoteStream;
@@ -204,28 +192,29 @@ function App() {
 
       // Code for creating SDP answer below
       const offer = roomSnapshot.data().offer;
-      console.log("Got offer:", offer);
+
       await peerConnection.setRemoteDescription(
         new RTCSessionDescription(offer)
       );
       const answer = await peerConnection.createAnswer();
-      console.log("Created answer:", answer);
+
       await peerConnection.setLocalDescription(answer);
 
       const roomWithAnswer = {
         answer: {
           type: answer.type,
           sdp: answer.sdp,
+          name: name,
         },
       };
-      await roomRef.update(roomWithAnswer);
-      // Code for creating SDP answer above
 
-      // Listening for remote ICE candidates below
+      await roomRef.update(roomWithAnswer);
+
       roomRef.collection("callerCandidates").onSnapshot((snapshot) => {
         snapshot.docChanges().forEach(async (change) => {
           if (change.type === "added") {
             let data = change.doc.data();
+            console.log(2);
             console.log(
               `Got new remote ICE candidate: ${JSON.stringify(data)}`
             );
@@ -233,20 +222,20 @@ function App() {
           }
         });
       });
-      // Listening for remote ICE candidates above
+
+      roomRef.onSnapshot(async (snapshot) => {
+        const data = snapshot.data();
+        if (data && data.answer) {
+          setDisplayName(data.answer?.name);
+        }
+        if (data && data.offer) {
+          setDisplayNameRemote(data.offer?.name);
+        }
+      });
     }
   }
 
   async function openUserMedia(e) {
-    // const stream = await navigator.mediaDevices.getUserMedia({
-    //   video: true,
-    //   audio: true,
-    // });
-    // document.getElementById("localVideo").srcObject = stream;
-    // setLocalStream(stream);
-
-    // remoteStream = new MediaStream();
-    // document.getElementById("remoteVideo").srcObject = remoteStream;
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
@@ -258,8 +247,7 @@ function App() {
 
     setDisabledCreate(false);
     setDisabledJoin(false);
-    setDisabledHang(false);
-    setDisabledCamera(true);
+    // setDisabledCamera(true);
   }
 
   async function hangUp(e) {
@@ -280,9 +268,9 @@ function App() {
 
     document.getElementById("remoteVideo").srcObject = null;
 
-    setDisabledCamera(false);
-    setDisabledJoin(true);
-    setDisabledCreate(true);
+    // setDisabledCamera(false);
+    setDisabledJoin(false);
+    setDisabledCreate(false);
     setDisabledHang(true);
     document.getElementById("currentRoom").innerText = "";
 
@@ -305,7 +293,7 @@ function App() {
       await roomRef.delete();
     }
 
-    document.location.reload(true);
+    window.location.reload();
   }
 
   function registerPeerConnectionListeners() {
@@ -330,21 +318,14 @@ function App() {
     });
   }
 
-  // const onSendMessage = async (message) => {
-  //   console.log(message);
-  // };
-
   async function onSendMessage() {
+    setSending(true);
     const roomRef = db.collection("messages").doc(chatRoom);
 
-    // roomRef.collection("messages").
     const docSnap = await getDoc(doc(db, "messages", chatRoom));
 
     peerConnection = new RTCPeerConnection(configuration);
 
-    // Code for collecting ICE candidates above
-
-    // Code for creating a room below
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
@@ -362,23 +343,15 @@ function App() {
     if (chatRoom) {
       await setDoc(doc(db, "messages", chatRoom), messageDetail).then(() => {
         setMessage("");
+        setSending(false);
       });
     } else {
       await roomRef.set(messageDetail).then(() => {
         setMessage("");
+        setSending(false);
       });
       setChatRoom(roomRef.id);
     }
-
-    roomRef.collection("messages").onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === "added") {
-          let data = change.doc.data();
-          console.log(`Got new remote ICE candidate: ${JSON.stringify(data)}`);
-          await peerConnection.addIceCandidate(new RTCIceCandidate(data));
-        }
-      });
-    });
   }
 
   const handleListenMessages = () => {
@@ -393,78 +366,50 @@ function App() {
 
   useEffect(() => {
     openUserMedia();
-    handleListenMessages();
   }, []);
 
   useEffect(() => {
     handleListenMessages();
   }, [chatRoom]);
 
-  console.log(listMessages);
+  useEffect(() => {
+    document.getElementById("chat-area").scroll({
+      top: listMessages?.length * 80,
+      behavior: "smooth",
+    });
+  }, [listMessages]);
 
   return (
     <div className="App">
       <div style={{ display: "flex", gap: 15, justifyContent: "center" }}>
-        <h1>Hello</h1>
-        {name ? (
-          <h1>{name}</h1>
-        ) : (
-          <div style={{ display: "flex", height: "45px", marginTop: "20px" }}>
-            <input
-              style={{ fontSize: "25px" }}
-              onChange={(e) => setNameTemp(e.target.value)}
-            />
-            <button onClick={() => setName(nameTemp)}>Đặt tên</button>
-          </div>
-        )}
+        <h1>Hello {name}</h1>
       </div>
       <div
         id="buttons"
         style={{ gap: 10, display: "flex", justifyContent: "center" }}
       >
-        {/* <button
-          className="mdc-button mdc-button--raised"
-          onClick={() => openUserMedia()}
-          disabled={disabledCamera}
-        >
-          <i className="material-icons mdc-button__icon" aria-hidden="true">
-            perm_camera_mic
-          </i>
-          <span className="mdc-button__label">Open camera & microphone</span>
-        </button> */}
-        <button
-          className="mdc-button mdc-button--raised"
+        <Button
+          type="primary"
+          primary
           disabled={disabledCreate}
-          // id="createBtn"
           onClick={() => createRoom()}
         >
-          <i className="material-icons mdc-button__icon" aria-hidden="true">
-            group_add
-          </i>
           <span className="mdc-button__label">Create room</span>
-        </button>
-        <button
-          className="mdc-button mdc-button--raised"
-          disabled={disabledJoin}
-          id="joinBtn"
-          onClick={() => joinRoom()}
-        >
-          <i className="material-icons mdc-button__icon" aria-hidden="true">
-            group
-          </i>
-          <span className="mdc-button__label">Join room</span>
-        </button>
-        <button
-          className="mdc-button mdc-button--raised"
-          disabled={disabledHang}
-          onClick={() => hangUp()}
-          id="hangupBtn"
-        >
-          <i className="material-icons mdc-button__icon" aria-hidden="true">
-            close
-          </i>
-          <span className="mdc-button__label">Hangup</span>
-        </button>
+        </Button>
+        <span style={{ marginTop: 4 }}>or</span>
+        <div style={{ display: "flex" }}>
+          <Input placeholder="Enter partner's room id" id="room-id-input" />
+          <Button
+            disabled={disabledJoin}
+            type="secondary"
+            // id="joinBtn"
+            onClick={() =>
+              joinRoom(document.getElementById("room-id-input")?.value || "")
+            }
+          >
+            <span className="mdc-Button__label">Join room</span>
+          </Button>
+        </div>
       </div>
       <div style={{ fontWeight: 600, padding: "20px 20px" }}>
         <span>
@@ -482,13 +427,33 @@ function App() {
         </span>
       </div>
       <div id="videos" style={{ display: "flex", gap: 10, width: "100vw" }}>
-        <div style={{ border: "1px solid red", flex: 1 }}>
+        <div
+          style={{
+            flex: 1,
+            backgroundColor: "white",
+            display: "flex",
+            flexDirection: "column",
+            placeItems: "center",
+          }}
+        >
+          {displayName && <p>{displayName} (You)</p>}
           <video id="localVideo" muted autoPlay playsInline></video>
+          <Button
+            type="danger"
+            disabled={disabledHang}
+            onClick={() => hangUp()}
+            id="hangupBtn"
+            style={{ width: "150px", marginTop: 20 }}
+          >
+            <span className="mdc-Button__label">End call</span>
+          </Button>
         </div>
-        <div style={{ border: "1px solid blue", flex: 1 }}>
+        <div style={{ flex: 1, backgroundColor: "white" }}>
+          {displayNameRemote && <p>{displayNameRemote}</p>}
           <video
             ref={remoteVideo}
             id="remoteVideo"
+            muted
             autoPlay
             playsInline
           ></video>
@@ -542,12 +507,10 @@ function App() {
         </div>
         <div className="mdc-dialog__scrim"></div>
       </div>
-      <p style={{ textAlign: "left" }}>
-        Messages: <b> {chatRoom} </b>
-      </p>
+      <hr />
       <div
         style={{
-          border: "2px solid #f05a94",
+          marginTop: "20px",
           width: "100%",
           height: "400px",
           overflow: "auto",
@@ -555,52 +518,127 @@ function App() {
           padding: "10px",
         }}
       >
-        {listMessages.map((item) => {
-          return (
-            <div style={{ display: "flex" }}>
+        <div
+          id="chat-area"
+          style={{
+            flexDirection: "column",
+            display: "flex",
+            height: 350,
+            overflowY: "auto",
+            padding: 20,
+          }}
+        >
+          {listMessages.map((item) => {
+            return (
               <div style={{ width: "100%" }}>
                 <div
                   style={{
-                    border: "1px solid red",
                     width: "fit-content",
                     marginBottom: "10px",
                     float: item.name === name ? "right" : "left",
                   }}
                 >
-                  <p style={{ fontWeight: "bold" }}>
-                    {item?.name} at
-                    {moment(item?.time).format("HH:ss - DD/MM/YYYY")}
+                  <p
+                    style={{
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                      textAlign: item.name === name ? "right" : "left",
+                    }}
+                  >
+                    {item?.name}
                   </p>
-                  <div>{item?.message}</div>
+                  <Tooltip
+                    placement="left"
+                    title={moment(item?.time).format("HH:ss")}
+                  >
+                    <div
+                      style={{
+                        border: "1px solid #ccc",
+                        borderRadius: "8px",
+                        textAlign: item.name === name ? "right" : "left",
+                        padding: 10,
+                        width: "fit-content",
+                        marginLeft: item.name === name ? "auto" : "0px",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      {item?.message}
+                    </div>
+                  </Tooltip>
+                  {/* <div>{moment(item?.time).format("HH:ss - DD/MM/YYYY")}</div> */}
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
         <div
           style={{
             display: "flex",
             position: "absolute",
             bottom: "10px",
-            width: "100%",
+            width: "calc(100% - 20px)",
             height: 40,
+            gap: 10,
           }}
         >
-          <input
+          <Input
             value={message}
             onChange={(e) => setMessage(e.target.value ?? "")}
-            style={{ width: "100%" }}
+            style={{ flex: 1, paddingLeft: "10px" }}
             ref={inputRef}
+            placeholder="Type a message"
+            // disabled={sending}
+            onPressEnter={(e) => onSendMessage(e.target?.value || "")}
           />
-          <button
-            disabled={!message}
-            style={{ width: "150px" }}
-            onClick={() => onSendMessage(message)}
-          >
-            Gửi
-          </button>
+          <div>
+            <Button
+              disabled={!message}
+              style={{ width: "150px", height: "100%" }}
+              onClick={() => onSendMessage(message)}
+              loading={sending}
+            >
+              Gửi
+            </Button>
+          </div>
         </div>
       </div>
+      <Modal
+        title="Vui lòng nhập tên"
+        closable={false}
+        open={name === ""}
+        footer={
+          <div>
+            <Button
+              type="primary"
+              onClick={() =>
+                setName(document.getElementById("name-ref")?.value || "")
+              }
+            >
+              Confirm
+            </Button>
+          </div>
+        }
+      >
+        <div>
+          <Input style={{ fontSize: "20px" }} id="name-ref" />
+        </div>
+      </Modal>
+      <Modal
+        title="Incoming call ..."
+        closable={false}
+        open={isOpenIncoming}
+        footer={null}
+      >
+        <div>
+          <Button ref={pickupRef} type="primary" id="pickup-button">
+            Pick up
+          </Button>
+          <Button type="danger" id="decline-button">
+            Decline
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

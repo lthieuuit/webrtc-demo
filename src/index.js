@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
-import { render } from "react-dom";
+import "antd/dist/antd.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
@@ -12,6 +12,7 @@ root.render(
       <Route path="/" element={<App />}>
         <Route index element={<App />} />
         <Route path="/:id" element={<App />}></Route>
+        <Route path="/request" element={<App />}></Route>
       </Route>
     </Routes>
   </BrowserRouter>

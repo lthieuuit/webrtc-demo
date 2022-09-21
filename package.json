@@ -9,6 +9,7 @@
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
+    "antd": "^4.23.2",
     "firebase": "^9.10.0",
     "gh-pages": "^4.0.0",
     "material-components-web": "^14.0.0",
@@ -21,8 +22,7 @@
   },
   "homepage": "https://lthieuuit.github.io/webrtc-demo/",
   "scripts": {
-    "start": "webpack serve --port 3000",
-    "start-base": "react-scripts start",
+    "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
