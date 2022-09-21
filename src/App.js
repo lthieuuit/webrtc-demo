@@ -6,6 +6,8 @@ import db from "./firebase";
 import { useEffect, useRef, useState } from "react";
 import { MDCDialog } from "@material/dialog";
 import { useLocation } from "react-router-dom";
+import moment from "moment";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 const configuration = {
   iceServers: [
@@ -31,45 +33,37 @@ function App() {
 
   const [localStream, setLocalStream] = useState(null);
 
+  const [roomLink, setRoomLink] = useState("");
+
+  const [listMessages, setListMessages] = useState([]);
+
+  const [name, setName] = useState("");
+
+  const [nameTemp, setNameTemp] = useState("");
+
+  const [message, setMessage] = useState("");
+
+  const inputRef = useRef();
+
   const remoteVideo = useRef();
+
+  const [chatRoom, setChatRoom] = useState("");
+
   const location = useLocation();
 
-  useEffect(() => {
-    if (location.pathname.length > 2)
-      joinRoomById(location.pathname.replace("/", ""));
-  }, [location.pathname]);
-
-  async function collectIceCandidates(
-    roomRef,
-    peerConnection,
-    localName,
-    remoteName
-  ) {
-    const candidatesCollection = roomRef.collection(localName);
-
-    peerConnection.addEventListener("icecandidate", (event) => {
-      if (event.candidate) {
-        const json = event.candidate.toJSON();
-        candidatesCollection.add(json);
-      }
-    });
-
-    roomRef.collection(remoteName).onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
-          const candidate = new RTCIceCandidate(change.doc.data());
-          peerConnection.addIceCandidate(candidate);
-        }
-      });
-    });
-  }
+  const handleCopy = (text) => {
+    const dummy = document.createElement("textarea");
+    document.body.appendChild(dummy);
+    dummy.value = text;
+    dummy.select();
+    document.execCommand("copy");
+    document.body.removeChild(dummy);
+  };
 
   async function createRoom() {
-    // document.querySelector('#createBtn').disabled = true;
-    // document.querySelector('#joinBtn').disabled = true;
     setDisabledCreate(true);
     setDisabledJoin(true);
-    // const db = firebase.firestore();
+
     const roomRef = await db.collection("rooms").doc();
 
     console.log("Create PeerConnection with configuration: ", configuration);
@@ -105,12 +99,14 @@ function App() {
         sdp: offer.sdp,
       },
     };
+
     await roomRef.set(roomWithOffer);
-    roomId = roomRef.id;
+
+    // roomId = roomRef.id;
+
     console.log(`New room created with SDP offer. Room ID: ${roomRef.id}`);
-    document.querySelector(
-      "#currentRoom"
-    ).innerText = `Current room is ${roomRef.id} - You are the caller!`;
+
+    setRoomLink(roomRef.id);
     // Code for creating a room above
 
     peerConnection.addEventListener("track", (event) => {
@@ -142,6 +138,9 @@ function App() {
         }
       });
     });
+
+    setChatRoom(roomRef.id);
+
     // Listen for remote ICE candidates above
   }
 
@@ -156,9 +155,7 @@ function App() {
       async () => {
         roomId = document.getElementById("room-id").value;
         console.log("Join room: ", roomId);
-        document.getElementById(
-          "currentRoom"
-        ).innerText = `Current room is ${roomId} - You are the callee!`;
+        setRoomLink("Đang trong cuộc gọi ");
         await joinRoomById(roomId);
       },
       { once: true }
@@ -166,56 +163,13 @@ function App() {
     roomDialog.open();
   }
 
-  // const joinRoomById = async (roomId) => {
-  //   const roomRef = db.collection("rooms").doc(`${roomId}`);
-  //   const roomSnapshot = await roomRef.get();
-  //   console.log("Got room:", roomSnapshot.exists);
-  //   registerPeerConnectionListeners();
-
-  //   if (roomSnapshot.exists) {
-  //     console.log("Create PeerConnection with configuration: ", configuration);
-  //     peerConnection = new RTCPeerConnection(configuration);
-  //     localStream.getTracks().forEach((track) => {
-  //       peerConnection.addTrack(track, localStream);
-  //     });
-
-  //     // Code for collecting ICE candidates below
-  //     const answer = await peerConnection.createAnswer();
-  //     await peerConnection.setLocalDescription(answer);
-
-  //     const roomWithAnswer = {
-  //       answer: {
-  //         type: answer.type,
-  //         sdp: answer.sdp,
-  //       },
-  //     };
-  //     await roomRef.update(roomWithAnswer);
-
-  //     // Code for collecting ICE candidates above
-
-  //     peerConnection.addEventListener("track", (event) => {
-  //       console.log("Got remote track:", event.streams[0]);
-  //       event.streams[0].getTracks().forEach((track) => {
-  //         console.log("Add a track to the remoteStream:", track);
-  //         remoteStream?.addTrack(track);
-  //       });
-  //     });
-
-  //     // Code for creating SDP answer below
-
-  //     // Code for creating SDP answer above
-
-  //     // Listening for remote ICE candidates below
-
-  //     // Listening for remote ICE candidates above
-  //   }
-  // };
-
   async function joinRoomById(roomId) {
     const db = firebase.firestore();
     const roomRef = db.collection("rooms").doc(`${roomId}`);
     const roomSnapshot = await roomRef.get();
-    console.log("Got room:", roomSnapshot.exists);
+    // console.log("Got room:", roomSnapshot.exists);
+
+    setChatRoom(roomId);
 
     if (roomSnapshot.exists) {
       console.log("Create PeerConnection with configuration: ", configuration);
@@ -326,11 +280,6 @@ function App() {
 
     document.getElementById("remoteVideo").srcObject = null;
 
-    // document.querySelector("#cameraBtn").disabled = false;
-    // document.querySelector("#joinBtn").disabled = true;
-    // document.querySelector("#createBtn").disabled = true;
-    // document.querySelector("#hangupBtn").disabled = true;
-
     setDisabledCamera(false);
     setDisabledJoin(true);
     setDisabledCreate(true);
@@ -381,14 +330,99 @@ function App() {
     });
   }
 
+  // const onSendMessage = async (message) => {
+  //   console.log(message);
+  // };
+
+  async function onSendMessage() {
+    const roomRef = db.collection("messages").doc(chatRoom);
+
+    // roomRef.collection("messages").
+    const docSnap = await getDoc(doc(db, "messages", chatRoom));
+
+    peerConnection = new RTCPeerConnection(configuration);
+
+    // Code for collecting ICE candidates above
+
+    // Code for creating a room below
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    const messageDetail = {
+      message: [
+        ...(docSnap.data()?.message ?? []),
+        {
+          message: message,
+          time: moment().utc().format(),
+          name: name,
+        },
+      ],
+    };
+
+    if (chatRoom) {
+      await setDoc(doc(db, "messages", chatRoom), messageDetail).then(() => {
+        setMessage("");
+      });
+    } else {
+      await roomRef.set(messageDetail).then(() => {
+        setMessage("");
+      });
+      setChatRoom(roomRef.id);
+    }
+
+    roomRef.collection("messages").onSnapshot((snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type === "added") {
+          let data = change.doc.data();
+          console.log(`Got new remote ICE candidate: ${JSON.stringify(data)}`);
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data));
+        }
+      });
+    });
+  }
+
+  const handleListenMessages = () => {
+    if (chatRoom) {
+      db.collection("messages")
+        .doc(chatRoom)
+        .onSnapshot(doc(db, "messages", chatRoom), (doccument) => {
+          setListMessages(doccument.data()?.message ?? []);
+        });
+    }
+  };
+
+  useEffect(() => {
+    openUserMedia();
+    handleListenMessages();
+  }, []);
+
+  useEffect(() => {
+    handleListenMessages();
+  }, [chatRoom]);
+
+  console.log(listMessages);
+
   return (
     <div className="App">
-      <h1>Welcome to FirebaseRTC!</h1>
+      <div style={{ display: "flex", gap: 15, justifyContent: "center" }}>
+        <h1>Hello</h1>
+        {name ? (
+          <h1>{name}</h1>
+        ) : (
+          <div style={{ display: "flex", height: "45px", marginTop: "20px" }}>
+            <input
+              style={{ fontSize: "25px" }}
+              onChange={(e) => setNameTemp(e.target.value)}
+            />
+            <button onClick={() => setName(nameTemp)}>Đặt tên</button>
+          </div>
+        )}
+      </div>
       <div
         id="buttons"
         style={{ gap: 10, display: "flex", justifyContent: "center" }}
       >
-        <button
+        {/* <button
           className="mdc-button mdc-button--raised"
           onClick={() => openUserMedia()}
           disabled={disabledCamera}
@@ -397,7 +431,7 @@ function App() {
             perm_camera_mic
           </i>
           <span className="mdc-button__label">Open camera & microphone</span>
-        </button>
+        </button> */}
         <button
           className="mdc-button mdc-button--raised"
           disabled={disabledCreate}
@@ -433,7 +467,19 @@ function App() {
         </button>
       </div>
       <div style={{ fontWeight: 600, padding: "20px 20px" }}>
-        <span id="currentRoom"></span>
+        <span>
+          {roomLink ? `Mã phòng: ${roomLink}` : " "}
+          {roomLink && !roomLink?.includes("Đang") ? (
+            <p
+              onClick={() => handleCopy(roomLink)}
+              style={{ color: "blue", cursor: "pointer" }}
+            >
+              Sao chép mã phòng
+            </p>
+          ) : (
+            ""
+          )}
+        </span>
       </div>
       <div id="videos" style={{ display: "flex", gap: 10, width: "100vw" }}>
         <div style={{ border: "1px solid red", flex: 1 }}>
@@ -495,6 +541,65 @@ function App() {
           </div>
         </div>
         <div className="mdc-dialog__scrim"></div>
+      </div>
+      <p style={{ textAlign: "left" }}>
+        Messages: <b> {chatRoom} </b>
+      </p>
+      <div
+        style={{
+          border: "2px solid #f05a94",
+          width: "100%",
+          height: "400px",
+          overflow: "auto",
+          position: "relative",
+          padding: "10px",
+        }}
+      >
+        {listMessages.map((item) => {
+          return (
+            <div style={{ display: "flex" }}>
+              <div style={{ width: "100%" }}>
+                <div
+                  style={{
+                    border: "1px solid red",
+                    width: "fit-content",
+                    marginBottom: "10px",
+                    float: item.name === name ? "right" : "left",
+                  }}
+                >
+                  <p style={{ fontWeight: "bold" }}>
+                    {item?.name} at
+                    {moment(item?.time).format("HH:ss - DD/MM/YYYY")}
+                  </p>
+                  <div>{item?.message}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div
+          style={{
+            display: "flex",
+            position: "absolute",
+            bottom: "10px",
+            width: "100%",
+            height: 40,
+          }}
+        >
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value ?? "")}
+            style={{ width: "100%" }}
+            ref={inputRef}
+          />
+          <button
+            disabled={!message}
+            style={{ width: "150px" }}
+            onClick={() => onSendMessage(message)}
+          >
+            Gửi
+          </button>
+        </div>
       </div>
     </div>
   );
