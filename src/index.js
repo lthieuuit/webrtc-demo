@@ -5,15 +5,17 @@ import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import "antd/dist/antd.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import RequestList from "./views/request";
+import VideoCallComponent from "./views/call-session";
 const root = ReactDOM.createRoot(document.getElementById("root"));
+
 root.render(
   <BrowserRouter>
     <Routes>
-      <Route path="/" element={<App />}>
-        <Route index element={<App />} />
-        <Route path="/:id" element={<App />}></Route>
-        <Route path="/request" element={<App />}></Route>
-      </Route>
+      <Route path="/" element={<App />}></Route>
+      <Route path="/webrtc-demo" element={<App />}></Route>
+      <Route path="/call-center" element={<RequestList />}></Route>
+      <Route path="/join/:id" element={<VideoCallComponent />}></Route>
     </Routes>
   </BrowserRouter>
 );
