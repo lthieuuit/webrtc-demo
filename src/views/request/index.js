@@ -13,7 +13,7 @@ import {
   onSnapshot,
   collection,
 } from "firebase/firestore";
-import { Button, Modal, Table, Tooltip } from "antd";
+import { Button, Modal, Table, Tag, Tooltip } from "antd";
 import Input from "antd/lib/input/Input";
 import { Link } from "react-router-dom";
 
@@ -43,6 +43,7 @@ const RequestList = () => {
           ...item.data()?.offer,
           status: item.data()?.status?.name,
           statusAt: item.data()?.status?.time,
+          answerBy: item.data()?.answer?.name,
         }))
       );
     });
@@ -51,6 +52,19 @@ const RequestList = () => {
   useEffect(() => {
     handleListenRequest();
   }, []);
+
+  const detectTagColor = (text) => {
+    switch (text) {
+      case "new":
+        return "gold";
+      case "connecting":
+        return "blue";
+      case "disconnected":
+        return "volcano";
+      default:
+        return "cyan";
+    }
+  };
 
   const columns = [
     {
@@ -73,7 +87,7 @@ const RequestList = () => {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      // render: (text) => <a>{text}</a>,
+      render: (text) => <Tag color={detectTagColor(text)}>{text}</Tag>,
     },
     {
       title: "Action",
@@ -111,13 +125,15 @@ const RequestList = () => {
           {record.status === "connected" && (
             <p style={{ margin: 0 }}>
               This call is being supported at
-              <b> {moment(record?.statusAt).format("HH:mm:ss DD/MM/YYYY")}</b>
+              <b> {moment(record?.statusAt).format("HH:mm:ss DD/MM/YYYY")} </b>
+              by <b>{record?.answerBy}</b>
             </p>
           )}
           {record.status === "disconnected" && (
             <p style={{ margin: 0 }}>
               This call has been hung up at
-              <b> {moment(record?.statusAt).format("HH:mm:ss DD/MM/YYYY")}</b>
+              <b> {moment(record?.statusAt).format("HH:mm:ss DD/MM/YYYY")} </b>
+              by <b>{record?.answerBy}</b>
             </p>
           )}
         </div>
