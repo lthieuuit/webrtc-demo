@@ -58,6 +58,8 @@ function App() {
 
   const [status, setStatus] = useState("");
 
+  const [camDevice, setCamDevice] = useState("environment");
+
   // const [roomIdTemp, setRoomIdTemp] = useState("");
 
   const handleCopy = (text) => {
@@ -178,93 +180,6 @@ function App() {
 
     // Listen for remote ICE candidates below
   }
-
-  // const joinRoom = (roomIdTemp) => {
-  //   setDisabledCreate(true);
-  //   setDisabledJoin(true);
-  //   setDisabledHang(false);
-
-  //   joinRoomById(roomIdTemp);
-  // };
-
-  // async function joinRoomById(roomId) {
-  //   const db = firebase.firestore();
-  //   const roomRef = db.collection("rooms").doc(`${roomId}`);
-  //   const roomSnapshot = await roomRef.get();
-
-  //   setChatRoom(roomId);
-
-  //   if (roomSnapshot.exists) {
-  //     peerConnection = new RTCPeerConnection(configuration);
-  //     registerPeerConnectionListeners();
-  //     localStream.getTracks().forEach((track) => {
-  //       peerConnection.addTrack(track, localStream);
-  //     });
-
-  //     // Code for collecting ICE candidates below
-  //     const calleeCandidatesCollection = roomRef.collection("calleeCandidates");
-  //     peerConnection.addEventListener("icecandidate", (event) => {
-  //       if (!event.candidate) {
-  //         console.log("Got final candidate!");
-  //         return;
-  //       }
-  //       calleeCandidatesCollection.add(event.candidate.toJSON());
-  //     });
-  //     // Code for collecting ICE candidates above
-
-  //     peerConnection.addEventListener("track", (event) => {
-  //       event.streams[0].getTracks().forEach((track) => {
-  //         remoteStream?.addTrack(track);
-  //         if (remoteVideo.current && "srcObject" in remoteVideo.current) {
-  //           remoteVideo.current.srcObject = remoteStream;
-  //         }
-  //       });
-  //     });
-
-  //     // Code for creating SDP answer below
-  //     const offer = roomSnapshot.data().offer;
-
-  //     await peerConnection.setRemoteDescription(
-  //       new RTCSessionDescription(offer)
-  //     );
-  //     const answer = await peerConnection.createAnswer();
-
-  //     await peerConnection.setLocalDescription(answer);
-
-  //     const roomWithAnswer = {
-  //       answer: {
-  //         type: answer.type,
-  //         sdp: answer.sdp,
-  //         time: moment().utc().format(),
-  //         name: name,
-  //       },
-  //     };
-
-  //     await roomRef.update(roomWithAnswer);
-
-  //     roomRef.collection("callerCandidates").onSnapshot((snapshot) => {
-  //       snapshot.docChanges().forEach(async (change) => {
-  //         if (change.type === "added") {
-  //           let data = change.doc.data();
-  //           console.log(
-  //             `Got new remote ICE candidate: ${JSON.stringify(data)}`
-  //           );
-  //           await peerConnection.addIceCandidate(new RTCIceCandidate(data));
-  //         }
-  //       });
-  //     });
-
-  //     roomRef.onSnapshot(async (snapshot) => {
-  //       const data = snapshot.data();
-  //       if (data && data.answer) {
-  //         setDisplayName(data.answer?.name);
-  //       }
-  //       if (data && data.offer) {
-  //         setDisplayNameRemote(data.offer?.name);
-  //       }
-  //     });
-  //   }
-  // }
 
   async function openUserMedia(e) {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -397,21 +312,6 @@ function App() {
     }
   };
 
-  const readFile = () => {
-    if (!this.files || !this.files[0]) return;
-
-    const FR = new FileReader();
-
-    FR.addEventListener("load", function (evt) {
-      document.querySelector("#img").src = evt.target.result;
-      document.querySelector("#b64").textContent = evt.target.result;
-    });
-
-    FR.readAsDataURL(this.files[0]);
-  };
-
-  // document.querySelector("#inp").addEventListener("change", readFile);
-
   useEffect(() => {
     openUserMedia();
   }, []);
@@ -431,9 +331,47 @@ function App() {
     hangUp();
   });
 
+  const supports = navigator.mediaDevices.getSupportedConstraints();
+  if (!supports["facingMode"]) {
+    alert("Browser Not supported!");
+    return;
+  }
+
+  let stream;
+
+  const capture = async (facingMode) => {
+    const options = {
+      audio: false,
+      video: {
+        facingMode,
+      },
+    };
+
+    try {
+      if (stream) {
+        const tracks = stream.getTracks();
+        tracks.forEach((track) => track.stop());
+      }
+      stream = await navigator.mediaDevices.getUserMedia(options);
+    } catch (e) {
+      alert(e);
+      return;
+    }
+    document.getElementById("localVideo").srcObject.srcObject = null;
+    document.getElementById("localVideo").srcObject.srcObject = stream;
+    document.getElementById("localVideo").srcObject.play();
+  };
+
+  // btnBack.addEventListener('click', () => {
+  //   capture('environment');
+  // });
+
+  // btnFront.addEventListener('click', () => {
+  //   capture('user');
+  // });
+
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      {" "}
       <div style={{ display: "flex", gap: 15, justifyContent: "center" }}>
         <h1>Hello {name}</h1>
       </div>
@@ -446,7 +384,7 @@ function App() {
           disabled={disabledCreate}
           onClick={() => createRoom()}
         >
-          <span className="mdc-button__label">Create room</span>
+          <span className="mdc-button__label">Request support</span>
         </Button>
         {/* <span style={{ marginTop: 4 }}>or</span>
         <div style={{ display: "flex" }}>
@@ -496,6 +434,13 @@ function App() {
             autoPlay
             playsInline
           ></video>
+          <Button
+            onClick={() =>
+              capture(camDevice === "environment" ? "user" : "environment")
+            }
+          >
+            Switch
+          </Button>
           <Button
             type="danger"
             disabled={disabledHang}
